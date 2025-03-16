@@ -1,0 +1,25 @@
+import 'package:flutter/services.dart';
+
+class BiometricHelper {
+  static const MethodChannel _channel = MethodChannel('biometric_channel');
+
+  static Future<String> initDevice() async {
+    try {
+      final String result = await _channel.invokeMethod('initDevice');
+      return result;
+    } catch (e) {
+      print("Error al inicializar el dispositivo: $e");
+      return "Error al inicializar el dispositivo: $e";
+    }
+  }
+
+  static Future<String?> captureFingerprint() async {
+    try {
+      final String? fingerprintData = await _channel.invokeMethod('captureFingerprint');
+      return fingerprintData;
+    } catch (e) {
+      print("Error al capturar la huella: $e");
+      return null;
+    }
+  }
+}
