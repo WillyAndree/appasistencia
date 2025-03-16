@@ -22,4 +22,17 @@ class BiometricHelper {
       return null;
     }
   }
+
+  static Future<bool> matchFingerprint(String capturedTemplate, String storedTemplate) async {
+    try {
+      final bool result = await _channel.invokeMethod('matchFingerprint', {
+        'capturedTemplate': capturedTemplate,
+        'storedTemplate': storedTemplate,
+      });
+      return result;
+    } catch (e) {
+      print("Error al comparar las huellas: $e");
+      return false;
+    }
+  }
 }

@@ -14,6 +14,7 @@ import android.hardware.usb.UsbDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.util.Log
+import SecuGen.FDxSDKPro.SGFDxSecurityLevel
 
 class MainActivity : FlutterFragmentActivity() {
 
@@ -45,7 +46,7 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         val filter = IntentFilter(ACTION_USB_PERMISSION)
-        registerReceiver(usbReceiver, filter)
+        registerReceiver(usbReceiver, filter, Context.RECEIVER_EXPORTED)  // <-- Cambiado aquí
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -108,46 +109,106 @@ class MainActivity : FlutterFragmentActivity() {
         }
 
         try {
-            val buffer = ByteArray(400) // Buffer para almacenar la imagen cruda
-            val templateBuffer = ByteArray(400) // Buffer para almacenar la plantilla generada
+            val buffer = ByteArray(400) // Buffer para almacenar la imagen de la huella
+            val template = ByteArray(512) // Buffer para almacenar la plantilla de la huella
             val quality = IntArray(1)
 
-            try {
-                // Capturar imagen de la huella
-                val captureResult = sgfplib.GetImage(buffer)
-                if (captureResult != SGFDxErrorCode.SGFDX_ERROR_NONE) {
-                    return "Error al capturar la huella. Código de error: $captureResult"
-                }
-            } catch (e: Exception) {
-                return "Error al intentar capturar la huella: ${e.message}"
-            }
+            // Captura de la imagen de la huella
+            val captureResult = sgfplib.GetImage(buffer)
 
-            try {
-                // Generar plantilla a partir de la imagen capturada
-                val createTemplateResult = sgfplib.CreateTemplate(null, buffer, templateBuffer)
-                if (createTemplateResult != SGFDxErrorCode.SGFDX_ERROR_NONE) {
+            if (captureResult == SGFDxErrorCode.SGFDX_ERROR_NONE) {
+                // Crear plantilla de la huella
+                val createTemplateResult = sgfplib.CreateTemplate(null, buffer, template)
+
+                if (createTemplateResult == SGFDxErrorCode.SGFDX_ERROR_NONE) {
+                    // Convierte la plantilla a un String para guardar en SQLite
+                    val fingerprintTemplateString = template.joinToString(",")
+                    Log.d("BiometricHelper", "Plantilla generada correctamente")
+                    return fingerprintTemplateString
+                } else {
                     return "Error al crear plantilla de la huella. Código de error: $createTemplateResult"
                 }
-            } catch (e: Exception) {
-                return "Error al intentar crear la plantilla de la huella: ${e.message}"
+            } else {
+                return "Error al capturar la huella. Código de error: $captureResult"
             }
-
-            try {
-                // Convertimos la plantilla a String para almacenarla en SQLite
-                val fingerprintData = templateBuffer.joinToString(",")
-                Log.d("BiometricHelper", "Huella capturada correctamente")
-                return fingerprintData
-            } catch (e: Exception) {
-                return "Error al convertir la plantilla a texto: ${e.message}"
-            }
-
         } catch (e: Exception) {
-            Log.e("BiometricHelper", "Error general al capturar la huella: ${e.message}")
-            return "Error general al capturar la huella: ${e.message}"
+            return "Error al capturar la huella: ${e.message}"
         }
     }
 
+    private fun matchFingerprint(capturedTemplate: String, storedTemplate: String): Boolean {
+        if (!isDeviceInitialized) {
+            return false
+        }
 
+        try {
+            // Convertimos las plantillas desde Strings separados por comas a ByteArray
+            val capturedTemplateBytes = capturedTemplate.split(",").map { it.trim().toInt().toByte() }.toByteArray()
+            val storedTemplateBytes = storedTemplate.split(",").map { it.trim().toInt().toByte() }.toByteArray()
+
+            // Array para guardar la respuesta de la comparación (debe ser BooleanArray)
+            val matchScore = BooleanArray(1)
+
+            // Realizar la comparación usando el SDK de SecuGen
+            val matchResult = sgfplib.MatchTemplate(
+                capturedTemplateBytes,
+                storedTemplateBytes,
+                SGFDxSecurityLevel.SL_NORMAL,
+                matchScore
+            )
+
+            if (matchResult == SGFDxErrorCode.SGFDX_ERROR_NONE) {
+                Log.d("BiometricHelper", "Comparación completada con éxito. Resultado: ${matchScore[0]}")
+                return matchScore[0]  // Si es true, entonces la comparación fue exitosa
+            } else {
+                Log.e("BiometricHelper", "Error al capturar la huella. Código de error: $matchResult")
+                return false
+            }
+        } catch (e: Exception) {
+            Log.e("BiometricHelper", "Error al comparar las huellas: ${e.message}")
+            return false
+        }
+    }
+
+   /* private fun captureFingerprint(): String {
+        if (!isDeviceInitialized) {
+            return "Dispositivo no inicializado"
+        }
+
+        try {
+            val imageBuffer = ByteArray(400 * 400) // Buffer para la imagen de la huella (tamaño recomendado por el SDK)
+            val templateBuffer = ByteArray(512) // Buffer para la plantilla de la huella
+            val quality = IntArray(1)
+
+            // Capturamos la huella
+            val captureResult = sgfplib.GetImage(imageBuffer)
+            if (captureResult != SGFDxErrorCode.SGFDX_ERROR_NONE) {
+                return "Error al capturar la huella. Código de error: $captureResult"
+            }
+
+            // Validar la calidad de la imagen capturada
+            val qualityResult = sgfplib.GetImageQuality(400, 400, imageBuffer, quality)
+            if (qualityResult != SGFDxErrorCode.SGFDX_ERROR_NONE || quality[0] < 50) { // Puedes ajustar este umbral de calidad
+                return "Imagen de baja calidad. Intenta nuevamente."
+            }
+
+            // Crear plantilla de la huella
+            val templateResult = sgfplib.CreateTemplate(null, imageBuffer, templateBuffer)
+            if (templateResult != SGFDxErrorCode.SGFDX_ERROR_NONE) {
+                return "Error al crear el template de la huella. Código de error: $templateResult"
+            }
+
+            // Convertir la plantilla a String usando Base64 para almacenarla en SQLite
+            val fingerprintTemplate = android.util.Base64.encodeToString(templateBuffer, android.util.Base64.NO_WRAP)
+
+            Log.d("BiometricHelper", "Huella capturada correctamente")
+            return fingerprintTemplate
+
+        } catch (e: Exception) {
+            Log.e("BiometricHelper", "Error al capturar la huella: ${e.message}")
+            return "Error al capturar la huella: ${e.message}"
+        }
+    }*/
 
 
     override fun onDestroy() {

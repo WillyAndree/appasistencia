@@ -1,7 +1,10 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
+import 'biometric_helper.dart';
 
 class DatabaseHelper {
   static Future<Database> initDB() async {
@@ -17,7 +20,7 @@ class DatabaseHelper {
             dni TEXT,
             celular TEXT,
             features TEXT,
-            fingerprint TEXT
+            fingerprint BLOB
           )
         """);
       },
@@ -25,14 +28,17 @@ class DatabaseHelper {
     );
   }
 
-  static Future<void> insertUser(String name,String dni, String celular, List<double> features,String fingerprintData) async {
+  Future<void> insertUser(String name, String dni, String celular, List<double>? faceFeatures, String fingerprintData) async {
     final db = await initDB();
+
+    // Convertimos la plantilla a un Uint8List
+    final fingerprintBlob = Uint8List.fromList(fingerprintData.split(",").map((e) => int.parse(e)).toList());
+
     await db.insert('users', {
       'name': name,
-      'dni':dni,
-      'celular':celular,
-      'fingerprint':fingerprintData,
-      'features': features.join(','), // Guardar como String
+      'dni': dni,
+      'celular': celular,
+      'fingerprint': fingerprintBlob,
     });
   }
 
@@ -98,5 +104,32 @@ class DatabaseHelper {
 
 
     return rpta; // Umbral de similitud
+  }
+
+  Future<List?> identifyUserFinger(String fingerprintData) async {
+    final db = await initDB();
+    final users = await db.query('users');
+
+    List rpta = [];
+    final capturedFingerprint = Uint8List.fromList(fingerprintData.split(",").map((e) => int.parse(e)).toList());
+
+    for (var user in users) {
+      final storedFingerprint = user['fingerprint'] as Uint8List;
+
+      if (storedFingerprint != null && capturedFingerprint != null) {
+        if (await BiometricHelper.matchFingerprint(
+          capturedFingerprint.toString(),
+          storedFingerprint.toString(),
+        )) {
+          rpta.add({
+            "DNI": user['dni'],
+            "NOMBRES": user['name'],
+            "CELULAR": user['celular'],
+          });
+        }
+      }
+    }
+
+    return rpta;
   }
 }

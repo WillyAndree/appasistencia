@@ -45,7 +45,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
     if (_formKey.currentState!.validate()) {
 
           List<double>? _faceFeatures = [];
-          DatabaseHelper.insertUser(
+          DatabaseHelper().insertUser(
               _nombresController.text, _dniController.text,
               _celularApoderadoController.text, _faceFeatures,
               fingerprintData!);
@@ -95,12 +95,8 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
 
     if (fingerprintData != null && fingerprintData != "Dispositivo no inicializado") {
       print("HUELLA LEIDA: "+fingerprintData);
-
       _guardarUsuario(fingerprintData);
 
-     /* ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Huella registrada correctamente.')),
-      );*/
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al capturar la huella.')),
@@ -113,12 +109,14 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Registro de Usuario'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
       body: Container(
+        //margin: const EdgeInsets.only(top: 80),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -134,7 +132,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
                 const Text(
                   'Información Personal',
                   style: TextStyle(

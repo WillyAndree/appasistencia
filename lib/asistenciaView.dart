@@ -8,6 +8,8 @@ import 'package:telephony/telephony.dart';
 import 'model/bduser.dart';
 import 'package:intl/intl.dart';
 
+import 'model/biometric_helper.dart';
+
 class AsistenciaPage extends StatefulWidget {
   const AsistenciaPage({super.key});
 
@@ -22,12 +24,30 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
   String nombre_capturado = "________________";
   String cel_capturado = "";
   String _horaRegistro = "";
+  bool isInitialized = false;
   final Telephony telephony = Telephony.instance;
 
   @override
   void initState() {
     super.initState();
+    _initializeDevice();
     _requestSmsPermission();
+  }
+
+  void _initializeDevice() async {
+    String initMessage = await BiometricHelper.initDevice();
+
+    if (initMessage.contains("correctamente")) {
+      setState(() {
+        isInitialized = true; // Marcar como inicializado
+      });
+      print("✅ $initMessage");
+    } else {
+      setState(() {
+        isInitialized = false; // Marcar como no inicializado
+      });
+      print("❌ $initMessage");
+    }
   }
 
   Future<void> _requestSmsPermission() async {
@@ -102,6 +122,59 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
       }
     } catch (e) {
       print("Error: $e");
+    }
+  }
+  void _compareFingerprint() async {
+    final now = DateTime.now();
+    if (!isInitialized) { // Verificar si el dispositivo está inicializado antes de capturar la huella
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('El dispositivo aún no está inicializado.')),
+      );
+      return;
+    }
+
+    // Capturar la huella digital usando BiometricHelper
+    String? capturedTemplate = await BiometricHelper.captureFingerprint();
+
+    if (capturedTemplate != null && capturedTemplate != "Dispositivo no inicializado") {
+      print("HUELLA LEIDA: $capturedTemplate");
+
+      final storedUsers = await DatabaseHelper.getUsers();
+
+      bool userFound = false;
+
+      for (var user in storedUsers) {
+        String storedTemplate = user['fingerprint'];
+
+        // Realizar la comparación en Kotlin usando 'matchFingerprint'
+        bool match = await BiometricHelper.matchFingerprint(capturedTemplate, storedTemplate);
+
+        if (match) {
+          userFound = true;
+          setState(() {
+            dni_capturado = user["dni"];
+            nombre_capturado = user["name"];
+            cel_capturado = user["celular"];
+            _horaRegistro = DateFormat('HH:mm:ss').format(now);
+          });
+
+          final limite = DateTime(now.year, now.month, now.day, 10, 30);
+          if (now.isAfter(limite)) {
+            await _enviarMensaje();
+          }
+          break; // Salir del bucle al encontrar una coincidencia
+        }
+      }
+
+      if (!userFound) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Huella no registrada.')),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al capturar la huella.')),
+      );
     }
   }
   @override
@@ -198,7 +271,7 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
                   ElevatedButton(
                     onPressed: () async{
 
-
+                      _compareFingerprint();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
@@ -211,7 +284,7 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
                     child: const Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        FaIcon(FontAwesomeIcons.faceSmile, size: 20),
+                        FaIcon(FontAwesomeIcons.fingerprint, size: 20),
                         SizedBox(width: 8),
                         Text(
                           'Face ID',
