@@ -1,11 +1,19 @@
+import 'dart:async';
+
+import 'package:appasistencia/asistenciaView.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
+import 'package:appasistencia/constants.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'model/bduser.dart';
 import 'model/biometric_helper.dart';
 
 class RegistroUsuarioPage extends StatefulWidget {
-  const RegistroUsuarioPage({super.key});
+  final Future<String?> Function() captureFingerprint;
+  final Future<void> Function(String) onFingerprintCaptured;
+
+  const RegistroUsuarioPage({super.key, required this.captureFingerprint,
+  required this.onFingerprintCaptured});
 
   @override
   State<RegistroUsuarioPage> createState() => _RegistroUsuarioPageState();
@@ -16,24 +24,87 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
 
   final _dniController = TextEditingController();
   final _nombresController = TextEditingController();
+  final _gradoController = TextEditingController();
   final _celularApoderadoController = TextEditingController();
-  bool isInitialized = false;
+ // bool isInitialized = false;
+  bool isCapturing = false;
+  bool isProcessing = false;
+  String _message = '';
+  String? _fingerprintData;
   bool _isFormValid = false;
+  //Timer? captureTimer;
 
   @override
   void dispose() {
     _dniController.dispose();
     _nombresController.dispose();
+    _gradoController.dispose();
     _celularApoderadoController.dispose();
+    //captureTimer?.cancel();
     super.dispose();
   }
+
+
+
   @override
   void initState() {
     // TODO: implement initState
     super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _initializeDevice();
+    });
     DatabaseHelper.getUsers();
-    _initializeDevice();
+    //_startContinuousCapture();
   }
+
+ /* void _startContinuousCapture() {
+    captureTimer = Timer.periodic(Duration(seconds: 2), (timer) async {
+      if (!isCapturing && !isProcessing) {
+        setState(() {
+          isCapturing = true;
+        });
+        await _captureFingerprint();
+      }
+    });
+  }*/
+
+  /*Future<void> _captureFingerprint() async {
+    try {
+      final fingerprintData = await widget.captureFingerprint();
+      if (fingerprintData!.isNotEmpty) {
+        setState(() {
+          isProcessing = true;
+        });
+        await widget.onFingerprintCaptured(fingerprintData);
+        if (fingerprintData == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error al capturar la huella.')),
+          );
+          return;
+        }
+        if (fingerprintData == "Dispositivo no inicializado") {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error al capturar la huella.')),
+          );
+          return;
+        }
+
+        if(fingerprintData != "Error al capturar la huella. Código de error: 57"){
+          setState(() {
+            _fingerprintData = fingerprintData;
+            // _message = 'Huella capturada correctamente.';
+          });
+        }
+
+      }
+    } finally {
+      setState(() {
+        isCapturing = false;
+        isProcessing = false;
+      });
+    }
+  }*/
 
   void _validateForm() {
     setState(() {
@@ -41,14 +112,35 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
     });
   }
 
-  void _guardarUsuario(String fingerprintData) {
+  Future<void> studentsSearch(String dni) async {
+    final datos = await DatabaseHelper().buscarUsuarioPorDNI(dni);
+
+    if (datos != null) { // Validamos si se encontró el usuario
+      setState(() {
+        _nombresController.text = datos["name"];
+        _celularApoderadoController.text = datos["celular"];
+        _gradoController.text = datos["grado"];
+      });
+    } else {
+      // Muestra un mensaje o limpia los campos si no se encontró el usuario
+      setState(() {
+        _nombresController.clear();
+        _celularApoderadoController.clear();
+        _gradoController.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se encontró un usuario con ese DNI.')),
+      );
+    }
+  }
+
+
+  void _guardarUsuario(String fingerprintData) async{
     if (_formKey.currentState!.validate()) {
 
-          List<double>? _faceFeatures = [];
-          DatabaseHelper().insertUser(
-              _nombresController.text, _dniController.text,
-              _celularApoderadoController.text, _faceFeatures,
-              fingerprintData!);
+          await DatabaseHelper().updateUser(
+              _dniController.text,
+              fingerprintData);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Usuario registrado correctamente'),
@@ -57,51 +149,86 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
           );
 
         }
-    _dniController.clear();
-    _nombresController.clear();
-    _celularApoderadoController.clear();
-    setState(() {
-      _isFormValid = false;
-    });
+      _dniController.clear();
+      _nombresController.clear();
+      _celularApoderadoController.clear();
+    _gradoController.clear();
+      setState(() {
+        _isFormValid = false;
+      });
         // Limpiar el formulario después de guardar
 
 
   }
   void _initializeDevice() async {
+    // Mostrar el loader
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text("Inicializando dispositivo..."),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    // Ejecutar la inicialización
     String initMessage = await BiometricHelper.initDevice();
+
+    // Cerrar el loader
+    Navigator.of(context).pop();
 
     if (initMessage.contains("correctamente")) {
       setState(() {
-        isInitialized = true; // Marcar como inicializado
+        isInitialized = true;
       });
-      print("✅ $initMessage");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("✅ $initMessage")),
+      );
     } else {
       setState(() {
-        isInitialized = false; // Marcar como no inicializado
+        isInitialized = false;
       });
-      print("❌ $initMessage");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ $initMessage")),
+      );
     }
   }
 
   void _registerFingerprint() async {
-    if (!isInitialized) { // Verificar si el dispositivo está inicializado antes de capturar la huella
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('El dispositivo aún no está inicializado.')),
-      );
-      return;
-    }
+    setState(() {
+      _message = 'Coloque el dedo en el lector biométrico...';
+    });
 
     String? fingerprintData = await BiometricHelper.captureFingerprint();
 
-    if (fingerprintData != null && fingerprintData != "Dispositivo no inicializado") {
-      print("HUELLA LEIDA: "+fingerprintData);
-      _guardarUsuario(fingerprintData);
-
-    } else {
+    if (fingerprintData == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al capturar la huella.')),
+        const SnackBar(content: Text('Error al capturar la huella.')),
       );
+      return;
     }
+    if (fingerprintData == "Dispositivo no inicializado") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al capturar la huella.')),
+      );
+      return;
+    }
+    setState(() {
+      _fingerprintData = fingerprintData;
+      _message = 'Huella capturada correctamente.';
+    });
   }
 
 
@@ -114,8 +241,18 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
         title: const Text('Registro de Usuario'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        automaticallyImplyLeading: false,
+        leading:
+          IconButton(onPressed: (){
+             Navigator.pop(context);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => AsistenciaPage(captureFingerprint: widget.captureFingerprint, onFingerprintCaptured: widget.onFingerprintCaptured)),
+            );
+          }, icon: Icon(Icons.arrow_back)),
+
       ),
-      body: Container(
+      body: SingleChildScrollView(child: Container(
         //margin: const EdgeInsets.only(top: 80),
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -176,12 +313,18 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
                     }
                     return null;
                   },
+                  onChanged: (val) async{
+                    if(val.length == 8) {
+                      await studentsSearch(val);
+                    }
+                  },
                 ),
                 const SizedBox(height: 20),
 
                 // Campo Nombres
                 TextFormField(
                   controller: _nombresController,
+                  enabled: false,
                   decoration: InputDecoration(
                     labelText: 'Nombres',
                     hintText: 'Ingrese sus nombres completos',
@@ -210,6 +353,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
                 // Campo Celular de Apoderado
                 TextFormField(
                   controller: _celularApoderadoController,
+                  enabled: false,
                   decoration: InputDecoration(
                     labelText: 'Celular de Apoderado',
                     hintText: 'Ingrese el número de celular',
@@ -230,7 +374,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(9),
                   ],
-                  validator: (value) {
+                 /* validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Por favor ingrese el número de celular';
                     }
@@ -238,13 +382,99 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
                       return 'El número debe tener 9 dígitos';
                     }
                     return null;
+                  },*/
+                ),
+                const SizedBox(height: 20),
+
+                // Campo Nombres
+                TextFormField(
+                  controller: _gradoController,
+                  enabled: false,
+                  decoration: InputDecoration(
+                    labelText: 'Grado',
+                    hintText: 'Ingrese su grado',
+                    prefixIcon: const Icon(Icons.person, color: Colors.blue),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(15),
+                      borderSide: const BorderSide(color: Colors.blue),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(15),
+                      borderSide: const BorderSide(color: Colors.blue, width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Por favor ingrese su grado';
+                    }
+                    return null;
                   },
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 30),
+                ElevatedButton(
+                  onPressed: isInitialized ? _registerFingerprint : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.blue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                  ),
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FaIcon(FontAwesomeIcons.fingerprint, size: 25),
+                      SizedBox(width: 8),
+                      Text(
+                        'Capturar Huella',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+               /* ElevatedButton(
+                  onPressed: isInitialized ? _registerFingerprint : null,
+                  child: const Text('Capturar Huella'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    disabledBackgroundColor: Colors.blue.withOpacity(0.3),
+                  ),
+                ),*/
+               /* isProcessing
+                    ? CircularProgressIndicator()
+                    : Icon(
+                  Icons.fingerprint,
+                  size: 100,
+                  color: isCapturing ? Colors.blue : Colors.grey,
+                ),
+                SizedBox(height: 20),
+                Text(
+                  isCapturing ? 'Capturando huella...' : 'Esperando huella...',
+                  style: TextStyle(fontSize: 16),
+                ),*/
+                const SizedBox(height: 10),
+                Text(_message,style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),),
+                const SizedBox(height: 30),
 
                 // Botón Guardar
                 ElevatedButton(
-                  onPressed: _isFormValid ? _registerFingerprint : null,
+                  onPressed: (){
+                    if(_isFormValid){
+                      _guardarUsuario(_fingerprintData!);
+                    }else{
+                      print("nada");
+                    }
+
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
@@ -266,7 +496,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 }

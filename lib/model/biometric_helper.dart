@@ -13,15 +13,25 @@ class BiometricHelper {
     }
   }
 
+
+
+  static bool _isProcessing = false;
+
   static Future<String?> captureFingerprint() async {
+    if (_isProcessing) return null;
+
+    _isProcessing = true;
     try {
       final String? fingerprintData = await _channel.invokeMethod('captureFingerprint');
       return fingerprintData;
     } catch (e) {
       print("Error al capturar la huella: $e");
       return null;
+    } finally {
+      _isProcessing = false;
     }
   }
+
 
   static Future<bool> matchFingerprint(String capturedTemplate, String storedTemplate) async {
     try {
