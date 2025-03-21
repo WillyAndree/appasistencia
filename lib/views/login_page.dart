@@ -10,7 +10,8 @@ import '../model/bduser.dart';
 import '../model/biometric_helper.dart';
 import '../model/utils/dialogs.dart';
 import '../model/utils/responses.dart';
-
+import 'package:convert/convert.dart';
+import 'dart:typed_data';
 class LoginPage extends StatefulWidget {
   @override
   _LoginPageState createState() => _LoginPageState();
@@ -39,95 +40,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     _fadeAnimation = CurvedAnimation(parent: _animationController, curve: Curves.easeIn);
     _animationController.forward();
   }
-
-  /*Future<void> sincronizandoDataLogueo() async {
-    List listUsers = [];
-    listUsers.clear();
-    String msjError = "";
-    Responses? response;
-    showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          Size size = MediaQuery.of(context).size;
-          return Center(
-              child: AlertDialog(
-                  backgroundColor: Colors.transparent,
-                  content: Container(
-                    color: Colors.white,
-                    height: size.height *0.18,
-                    padding: const EdgeInsets.all(18),
-                    child: const Column(children: <Widget>[
-                      CircularProgressIndicator(),
-                      SizedBox(height: 5),
-                      Text("Sincronizando permisos")
-                    ]),
-                  )));
-        });
-
-    response = await usrsBloc.addUsuarios(
-        "24", "sincronizacionLogueo");
-    if (response.rspt) {
-      listUsers = response.datos! ;
-    } else {
-      msjError = '${msjError.trim()} \n${response.mensaje} - Usuarios';
-    }
-
-
-    if (msjError.trim().isNotEmpty) {
-      setState(() {
-        Navigator.pop(context);
-        Dialogs.showMessageGeneralSweeralertgcp(
-            context: context,
-            icon: Dialogs.error,
-            paddingdefault: true,
-            content: [
-              Text(msjError.trim()),
-            ],
-            actions: [
-              TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Ok'))
-            ]);
-      });
-      return;
-    }
-
-    setState(() {
-      Navigator.pop(context);
-      Dialogs.showMessageGeneralCargando(
-          context: context,
-          barrierColor: Colors.blue.withOpacity(0.6),
-          content: [const Text('Guardando Datos.')]);
-    });
-
-    msjError = '';
-
-    response = await registrarUsuariosSql(listUsers);
-    msjError = '${msjError.trim()} \n${!response.rspt ? response.mensaje : ""}';
-
-    setState(() {
-      Navigator.pop(context);
-      Dialogs.showMessageGeneralSweeralertgcp(
-          context: context,
-          icon: msjError.trim().isEmpty ? Dialogs.success : Dialogs.error,
-          paddingdefault: true,
-          content: [
-            Text(msjError.trim().isEmpty
-                ? 'Se sincronizaron los Datos'
-                : 'Sucedio algo...\n${msjError.trim()}'),
-          ],
-          actions: [
-            TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: const Text('Ok'))
-          ]);
-    });
-  }*/
 
   void _initializeDevice() async {
     // Mostrar el loader
@@ -233,6 +145,14 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     print('Huella capturada: $fingerprintData');
   }
 
+  String convertIntListToHexString(List<int> intList) {
+    // Convierte la lista de enteros a un Uint8List
+    Uint8List uint8List = Uint8List.fromList(intList);
+
+    // Convierte a cadena hexadecimal
+    return hex.encode(uint8List);
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +184,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                 borderRadius: BorderRadius.circular(50)),
                             child: IconButton(
                               onPressed: (() async {
-                                await UserFetcher.fetchAndStoreUsers(context, "https://colegiojorgebasadre.quipukey.pe/index.php/datosmovil/getSincronizarDatos");
+                                await UserFetcher().fetchAndStoreUsers(context, "https://colegiojorgebasadre.quipukey.pe/index.php/datosmovil/getSincronizarDatos");
                               }),
                               icon: const Icon(
                                 Icons.sync,

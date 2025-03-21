@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:appasistencia/model/biometric_helper.dart';
+import 'package:appasistencia/viewmodel/alumnos/alumnos_transfer.dart';
 import 'package:appasistencia/viewmodel/asistencias/asistencias_transfer.dart';
 import 'package:flutter/material.dart';
 import 'package:telephony/telephony.dart';
@@ -38,7 +42,13 @@ class _RegistroAsistenciasState extends State<RegistroAsistencias> {
 
    Future<bool> _enviarMensaje(String id,String tipo, String cel, String nombre_capturado,_horaRegistro ) async {
      String numeroApoderado = cel; // Reemplaza con el número real del apoderado
-     String mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro, lo cual se considera $tipo';
+     String mensaje = '';
+     if(tipo =="nada"){
+      mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro';
+     }else{
+       mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro, lo cual se considera $tipo';
+     }
+
 
      try {
        await telephony.sendSms(
@@ -79,6 +89,22 @@ class _RegistroAsistenciasState extends State<RegistroAsistencias> {
               final limite_ingreso = DateTime(now.year, now.month, now.day, 10, 00);
               final salida = DateTime(now.year, now.month, now.day, 15, 30);
 
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (BuildContext context) {
+                  return const AlertDialog(
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Enviando mensajes...'),
+                      ],
+                    ),
+                  );
+                },
+              );
               for(int i = 0; i <asistencias.length; i++){
                 if(asistencias[i]["mensaje_enviado"] == "0"){
                   print("DATA: "+DateTime.parse(asistencias[i]["fecha"]+' '+asistencias[i]["hora"]).toString());
@@ -98,9 +124,12 @@ class _RegistroAsistenciasState extends State<RegistroAsistencias> {
                     if(asistencias[i]["celular"] != ''){
                       await _enviarMensaje(asistencias[i]["id"],_estado_registro, asistencias[i]["celular"], asistencias[i]["name"], asistencias[i]["hora"]);
                     }
+                  }else{
+                    await _enviarMensaje(asistencias[i]["id"],'nada', asistencias[i]["celular"], asistencias[i]["name"], asistencias[i]["hora"]);
                   }
                 }
               }
+              Navigator.of(context).pop();
             },
           ),
           IconButton(
@@ -112,13 +141,43 @@ class _RegistroAsistenciasState extends State<RegistroAsistencias> {
           IconButton(
             icon: Icon(Icons.upload),
             onPressed: () async{
+              String mensaje = "";
               List asist = await DatabaseHelper.getAsistenciasTransf();
               for(int i = 0; i < asist.length; i++){
+                Uint8List blobData = asist[i]['fingerprint'];
+                String base64Data = base64Encode(blobData);
+                List data =  await AsistFetcher.TransferAsist(context, "https://colegiojorgebasadre.quipukey.pe/index.php/Datosmovil/AsistenciaHuellaAlumno",
+                    asist[i]['codigoalumno'],  asist[i]['fingerprint'].toString(), asist[i]['fecha'], asist[i]['hora'], asist[i]['tipo'], asist[i]['fecharegistro'], asist[i]['idusuario'].toString());
+                if(data[0]["rpta"]){
+                  await  DatabaseHelper().updateEstadoState(asist[i]['id'], '1');
+                }
 
-                AsistFetcher.TransferAsist(context, "https://colegiojorgebasadre.quipukey.pe/index.php/datosmovil/setAsistenciaHuellaAlumno",
-                    asist[i]['codigoalumno'],  asist[i]['fingerprint'].toString(), asist[i]['fecha'], asist[i]['hora'], asist[i]['tipo'], asist[i]['fecharegistro'], asist[i]['idusuario']);
+                mensaje = mensaje+data[0]["mensaje"];
+              }
 
-                DatabaseHelper().updateEstadoState(asist[i]['codigoalumno'], '1');
+              List students_huellas = await DatabaseHelper.getHuellasTransf();
+              for(int i = 0; i < students_huellas.length; i++){
+                Uint8List blobData = students_huellas[i]['fingerprint'];
+                String base64Data = base64Encode(blobData);
+                List data =  await StudentFetcher.TransferStudent(context, "https://colegiojorgebasadre.quipukey.pe/index.php/Datosmovil/HuellaAlumno",
+                    students_huellas[i]['codigoalumno'],  students_huellas[i]['fingerprint'].toString());
+
+                if(data[0]["rpta"]){
+                  await DatabaseHelper().updateEstadoStudents(students_huellas[i]['codigoalumno'], '1');
+                }
+                mensaje = mensaje + data[0]["mensaje"];
+
+
+              }
+
+              if(mensaje.isNotEmpty){
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$mensaje')),
+                );
+              }else{
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Transferencia Exitosa')),
+                );
               }
 
             },

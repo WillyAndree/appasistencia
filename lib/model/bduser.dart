@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -22,7 +23,8 @@ class DatabaseHelper {
             features TEXT,
             fingerprint BLOB,
             grado TEXT,
-            seccion TEXT
+            seccion TEXT,
+            transferido CHAR(1) DEFAULT '0'
           )
         """);
         await db.execute("""
@@ -35,19 +37,19 @@ class DatabaseHelper {
             estado CHAR(1)
           )
         """);
-        await db.execute("""
-          CREATE TABLE asistencia(
-            id integer primary key AUTOINCREMENT,
-            idstudent TEXT,
-            fecha VARCHAR(10),
-            hora VARCHAR(10),
-            tipo CHAR(1),
-            fecharegistro DATETIME DEFAULT CURRENT_TIMESTAMP,
-            idusuario VARCHAR(50),
-            mensaje_enviado CHAR(1),
-            transferido CHAR(1) DEFAULT '0'
-          )
-        """);
+        await db.execute('''
+  CREATE TABLE asistencia (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    idstudent TEXT,
+    fecha TEXT,
+    hora TEXT,
+    tipo TEXT,
+    fecharegistro TEXT DEFAULT (DATETIME('now', 'localtime')),
+    idusuario TEXT,
+    mensaje_enviado TEXT,
+    transferido TEXT DEFAULT '0'
+  )
+''');
       },
       version: 1,
     );
@@ -153,18 +155,72 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> insertStudentSync(String id,String name, String dni, String celular, String fingerprintData, String grado, String seccion) async {
+  Future<void> insertStudentSync(String id,String name, String dni, String celular, String fingerprintData, String grado, String seccion, String transferido) async {
     final db = await initDB();
 
-    await db.insert('students', {
-      'id': id,
-      'name': name,
-      'dni': dni,
-      'celular': celular,
-      'fingerprint': fingerprintData,
-      'grado': grado,
-      'seccion': seccion,
-    });
+    if(fingerprintData.contains(",")){
+      final stringBytes = fingerprintData.replaceAll("[", "").replaceAll("]", "").split(",");
+
+      // Crear una lista de bytes
+      final List<int> byteList = [];
+
+      for (final stringByte in stringBytes) {
+        // Eliminar espacios en blanco
+        final trimmedStringByte = stringByte.trim();
+
+        // Intentar convertir el string a un entero
+        final int? byteValue = int.tryParse(trimmedStringByte);
+
+        // Verificar si la conversión fue exitosa
+        if (byteValue == null) {
+          // Manejar el error: no se pudo convertir el string a un entero
+          print("Error: No se pudo convertir '$trimmedStringByte' a un entero.");
+          return; // O lanzar una excepción, dependiendo de cómo quieras manejar el error
+        }
+
+        // Verificar si el valor está en el rango de un byte (-128 a 127)
+        /*if (byteValue < -128 || byteValue > 260) {
+          // Manejar el error: el valor está fuera del rango de un byte
+          print("Error: El valor '$byteValue' está fuera del rango de un byte.");
+          return; // O lanzar una excepción, dependiendo de cómo quieras manejar el error
+        }*/
+
+        // Agregar el valor a la lista de bytes
+        byteList.add(byteValue);
+      }
+      // Verificar el tamaño del template
+      if (byteList.length != 2048) {
+        // Manejar el error: el tamaño del template no es el correcto
+        print("Error: El tamaño del template no es el correcto.");
+        return; // O lanzar una excepción, dependiendo de cómo quieras manejar el error
+      }
+
+      // Convertir la lista de bytes a un Uint8List
+      final fingerprintBlob = Uint8List.fromList(byteList);
+      await db.insert('students', {
+        'id': id,
+        'name': name,
+        'dni': dni,
+        'celular': celular,
+        'fingerprint': fingerprintBlob,
+        'grado': grado,
+        'seccion': seccion,
+        'transferido':transferido
+      });
+    }else{
+      await db.insert('students', {
+        'id': id,
+        'name': name,
+        'dni': dni,
+        'celular': celular,
+        'fingerprint': fingerprintData,
+        'grado': grado,
+        'seccion': seccion,
+        'transferido':transferido
+      });
+    }
+
+
   }
 
   Future<void> uodateMessageState(String id,String estado) async {
@@ -175,10 +231,17 @@ class DatabaseHelper {
     }, where: 'id', whereArgs: [id]);
   }
 
-  Future<void> updateEstadoState(String id,String estado) async {
+  Future<void> updateEstadoState(int id,String estado) async {
     final db = await initDB();
 
     await db.update('asistencia', {
+      'transferido':estado
+    }, where: 'id = ? ', whereArgs: [id]);
+  }
+  Future<void> updateEstadoStudents(String id,String estado) async {
+    final db = await initDB();
+
+    await db.update('students', {
       'transferido':estado
     }, where: 'id = ? ', whereArgs: [id]);
   }
@@ -186,7 +249,7 @@ class DatabaseHelper {
   Future<void> deleteStudent() async {
     final db = await initDB();
 
-    await db.delete('students');
+    await db.delete('students',where: 'transferido = 1');
   }
 
   Future<void> deleteUsers() async {
@@ -231,16 +294,22 @@ class DatabaseHelper {
     final db = await initDB();
     final now = DateTime.now();
     String fecha = DateFormat('yyyy-MM-dd').format(now);
-    return db.rawQuery(" select a.id,s.name, max(a.fecha) as fecha, max(a.hora) as hora, s.celular, a.mensaje_enviado from asistencia a inner join students s on (a.idstudent = s.id) where a.fecha = ? group by s.name  ", [fecha]);
+    return db.rawQuery(" select a.id,s.name, a.fecha as fecha, a.hora, s.celular, a.mensaje_enviado from asistencia a inner join students s on (a.idstudent = s.id) where a.fecha = ?   ", [fecha]);
   }
 
   static Future<List<Map<String, dynamic>>> getAsistenciasTransf() async {
     final db = await initDB();
     final now = DateTime.now();
     String fecha = DateFormat('yyyy-MM-dd').format(now);
-    return db.rawQuery(" select s.id as codigoalumno ,s.fingerprint, a.fecha, a.hora, a.tipo, a.fecharegistro, a.idusuario from asistencia a inner join students s on (a.idstudent = s.id) where a.transferido = '0' ");
+    return db.rawQuery("select a.id,s.id as codigoalumno ,s.fingerprint, a.fecha, a.hora, a.tipo, a.fecharegistro, u.id as idusuario from asistencia a inner join students s on (a.idstudent = s.id) inner join users u on (LOWER(u.login) = a.idusuario) where a.transferido = '0' ");
   }
 
+  static Future<List<Map<String, dynamic>>> getHuellasTransf() async {
+    final db = await initDB();
+    final now = DateTime.now();
+    String fecha = DateFormat('yyyy-MM-dd').format(now);
+    return db.rawQuery(" select s.id as codigoalumno ,s.fingerprint from  students s  where s.transferido = '0' ");
+  }
 
 
   double cosineSimilarity(List<double> a, List<double> b) {

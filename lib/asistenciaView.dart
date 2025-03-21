@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:appasistencia/constants.dart';
 import 'package:appasistencia/registeruserView.dart';
+import 'package:appasistencia/viewmodel/alumnos/alumnos_transfer.dart';
+import 'package:appasistencia/viewmodel/asistencias/asistencias_transfer.dart';
 import 'package:appasistencia/views/register_asist.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +33,7 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
   String dni = "";
   String dni_capturado = "________";
   String nombre_capturado = "________________";
+  String apellido_capturado = "________________";
   String grado_capturado = "________________";
   String seccion_capturado = "________________";
   String cel_capturado = "";
@@ -98,7 +101,13 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
 
   Future<bool> _enviarMensaje(String tipo) async {
     String numeroApoderado = cel_capturado; // Reemplaza con el número real del apoderado
-    String mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro, lo cual se considera $tipo';
+    String mensaje = "";
+    if(tipo == 'nada'){
+       mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro';
+    }else{
+      mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro, lo cual se considera $tipo';
+    }
+
 
     try {
       await telephony.sendSms(
@@ -244,7 +253,9 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
               setState(() {
                 dni_capturado = matchedUser!["dni"];
                 id_student_capturado = matchedUser["id"];
-                nombre_capturado = matchedUser["name"];
+                List nombres = matchedUser["name"].toString().split(",");
+                apellido_capturado = nombres[0];
+                nombre_capturado = nombres[1];
                 cel_capturado = matchedUser["celular"];
                 grado_capturado = matchedUser["grado"];
                 seccion_capturado = matchedUser["seccion"];
@@ -275,7 +286,8 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
                 });
                rpta =  await _enviarMensaje(_estado_registro);
               }else{
-                _estado_registro= "";
+                _estado_registro= "nada";
+                rpta =  await _enviarMensaje(_estado_registro);
               }
               if(rpta){
                 mensaje_enviado = '1';
@@ -384,8 +396,44 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
           }, icon: Icon(Icons.list)),
           IconButton(
             icon: Icon(Icons.upload),
-            onPressed: () {
-              // Acción de transferencia
+            onPressed: () async{
+              String mensaje = "";
+              List asist = await DatabaseHelper.getAsistenciasTransf();
+              for(int i = 0; i < asist.length; i++){
+
+               List data =  await AsistFetcher.TransferAsist(context, "https://colegiojorgebasadre.quipukey.pe/index.php/Datosmovil/AsistenciaHuellaAlumno",
+                    asist[i]['codigoalumno'],  asist[i]['fingerprint'].toString(), asist[i]['fecha'], asist[i]['hora'], asist[i]['tipo'], asist[i]['fecharegistro'], asist[i]['idusuario'].toString());
+              if(data[0]["rpta"]){
+                await  DatabaseHelper().updateEstadoState(asist[i]['id'], '1');
+              }
+
+               mensaje = mensaje+data[0]["mensaje"];
+              }
+
+              List students_huellas = await DatabaseHelper.getHuellasTransf();
+              for(int i = 0; i < students_huellas.length; i++){
+
+                List data =  await StudentFetcher.TransferStudent(context, "https://colegiojorgebasadre.quipukey.pe/index.php/Datosmovil/HuellaAlumno",
+                    students_huellas[i]['codigoalumno'],  students_huellas[i]['fingerprint'].toString());
+
+                if(data[0]["rpta"]){
+                  await DatabaseHelper().updateEstadoStudents(students_huellas[i]['codigoalumno'], '1');
+                }
+                mensaje = mensaje + data[0]["mensaje"];
+
+
+              }
+
+              if(mensaje.isNotEmpty){
+                ScaffoldMessenger.of(context).showSnackBar(
+                   SnackBar(content: Text('$mensaje')),
+                );
+              }else{
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Transferencia Exitosa')),
+                );
+              }
+
             },
           ),
         ],
@@ -429,10 +477,20 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
                  width: size.width*0.9,
                  child:
                    Text(
-                     '$nombre_capturado',
-                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),textAlign: TextAlign.center,
+                     '$apellido_capturado',
+                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),textAlign: TextAlign.center,
                    ),
                ),
+              Container(
+                alignment: Alignment.center,
+                margin: EdgeInsets.symmetric(horizontal: 10),
+                width: size.width*0.9,
+                child:
+                Text(
+                  '$nombre_capturado',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),textAlign: TextAlign.center,
+                ),
+              ),
               const SizedBox(height: 10),
               Container(
                 alignment: Alignment.center,
@@ -441,7 +499,7 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
                 child:
                 Text(
                   'Grado: $grado_capturado',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),textAlign: TextAlign.center,
                 ),
               ),
               const SizedBox(height: 10),
@@ -452,22 +510,23 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
                 child:
                 Text(
                   'Sección: $seccion_capturado',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),textAlign: TextAlign.center,
                 ),
               ),
 // Label para hora de registro
               const SizedBox(height: 30),
               Container(
+                alignment: Alignment.center,
                 width: size.width*0.8,
                 child: Text(
                   'Asistencia registrada a las: ${_horaRegistro ?? "No registrado"}',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue),textAlign: TextAlign.center,
                 ),
               ),
               Container(
                 width: size.width*0.8,
                 child: Text(
-                  '$_estado_registro',
+                  '${_estado_registro == "nada" ? "": _estado_registro}',
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red),textAlign: TextAlign.center,
                 ),
               ),

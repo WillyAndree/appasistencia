@@ -26,6 +26,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
   final _nombresController = TextEditingController();
   final _gradoController = TextEditingController();
   final _celularApoderadoController = TextEditingController();
+  String _codigo_alumno = '';
  // bool isInitialized = false;
   bool isCapturing = false;
   bool isProcessing = false;
@@ -120,6 +121,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
         _nombresController.text = datos["name"];
         _celularApoderadoController.text = datos["celular"];
         _gradoController.text = datos["grado"];
+        _codigo_alumno = datos["id"];
       });
     } else {
       // Muestra un mensaje o limpia los campos si no se encontró el usuario
@@ -141,6 +143,7 @@ class _RegistroUsuarioPageState extends State<RegistroUsuarioPage> {
           await DatabaseHelper().updateUser(
               _dniController.text,
               fingerprintData);
+          await DatabaseHelper().updateEstadoStudents(_codigo_alumno, '0');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Usuario registrado correctamente'),

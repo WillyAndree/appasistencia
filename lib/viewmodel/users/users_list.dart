@@ -1,12 +1,34 @@
 // Este archivo contiene la función para consumir una API y guardar usuarios en SQLite
 
 import 'dart:convert';
+import 'dart:developer';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:appasistencia/model/bduser.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:convert/convert.dart';
+import 'dart:typed_data';
 
 class UserFetcher {
-  static Future<void> fetchAndStoreUsers(BuildContext context, String apiUrl) async {
+
+  String convertIntListToHexString(String input) {
+    //if (input is List<dynamic>) {
+      List<String> dataStringList = input.replaceAll("[", "").replaceAll("]", "").replaceAll(" ", "").split(",");
+      // Convertimos cada elemento al tipo int si es necesario
+      List<int> data = dataStringList.map(int.parse).toList();
+
+      // Convertimos la lista de enteros a un string hexadecimal
+      return hex.encode(data).toUpperCase();
+   /* } else if (input is String) {
+      // Si ya es un string, lo retornamos tal cual
+      return input;
+    } else {
+      throw ArgumentError("El dato proporcionado no es una lista de enteros ni un string.");
+    }*/
+  }
+
+   Future<void> fetchAndStoreUsers(BuildContext context, String apiUrl) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -32,52 +54,95 @@ class UserFetcher {
         List studentsJson = rptaJson["Alumnos"] ?? [];
         List usersJson = rptaJson["Usuarios"] ?? [];
 
-        if (studentsJson.isEmpty) {
+        if (studentsJson.isEmpty && usersJson.isEmpty) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No se encontraron alumnos en la API.')),
+            const SnackBar(content: Text('No se encontraron usuarios o alumnos en la API.')),
           );
           return;
         }
 
-        if (usersJson.isEmpty) {
-          Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No se encontraron usuarios en la API.')),
-          );
-          return;
+        if(studentsJson.isNotEmpty){
+          await DatabaseHelper().deleteStudent();
         }
 
-        await DatabaseHelper().deleteStudent();
+        if(usersJson.isNotEmpty){
+          await DatabaseHelper().deleteUsers();
+        }
+
+
+        int insertedStudents = 0;
+        int duplicatedStudents = 0;
+
 
         for (var studentJson in studentsJson) {
-          await DatabaseHelper().insertStudentSync(
+          try {
+           /* String huella;
+
+            if((studentJson['HUELLA_INDICE_DERECHO'].toString() != "null" || studentJson['HUELLA_INDICE_DERECHO'] != null) || studentJson['HUELLA_INDICE_DERECHO'] != "0" ){
+              List<String> dataStringList = studentJson['HUELLA_INDICE_DERECHO'].toString()
+                  .replaceAll("[", "")
+                  .replaceAll(" ", "")
+                  .replaceAll("]", "")
+                  .split(",");
+
+              List<int> data = dataStringList.map(int.parse).toList();
+               huella = base64Encode(data);
+            }else{
+              huella = studentJson['HUELLA_INDICE_DERECHO'];
+            }*/
+
+
+            await DatabaseHelper().insertStudentSync(
               studentJson['CODIGOALUMNO'],
-              studentJson['APELLIDO_ALUMNO']+", "+studentJson['NOMBRE_ALUMNO'],
+              studentJson['APELLIDO_ALUMNO'] + ", " + studentJson['NOMBRE_ALUMNO'],
               studentJson['DNI_ALUMNO'],
               studentJson['TELEFONO01'] ?? "",
-              studentJson['HUELLA_INDICE_DERECHO'] ?? "",
+              studentJson['HUELLA_INDICE_DERECHO'] ?? '',
               studentJson['GRADO'],
-              studentJson['SECCION']
-          );
+              studentJson['SECCION'],
+              "1",
+            );
+            insertedStudents++;
+          } catch (e) {
+            print(e);
+            if (e is DatabaseException && e.isUniqueConstraintError()) {
+              duplicatedStudents++;
+            } else {
+              rethrow; // Si el error es diferente, se lanza nuevamente
+            }
+
+          }
         }
 
-        await DatabaseHelper().deleteUsers();
+        int insertedUsers = 0;
+        int duplicatedUsers = 0;
 
         for (var userJson in usersJson) {
-          await DatabaseHelper().insertUsersSync(
+          try {
+            await DatabaseHelper().insertUsersSync(
               userJson['IDUSUARIO'],
-              userJson['APELLIDOS']+", "+userJson['NOMBRES'],
+              userJson['APELLIDOS'] + ", " + userJson['NOMBRES'],
               userJson['DNI'],
               userJson['LOGIN'] ?? "",
               userJson['PASSWORD'] ?? "",
-              userJson['ESTADO']
-          );
+              userJson['ESTADO'],
+            );
+            insertedUsers++;
+          } catch (e) {
+            if (e is DatabaseException && e.isUniqueConstraintError()) {
+              duplicatedUsers++;
+            } else {
+              rethrow;
+            }
+          }
         }
 
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Usuarios registrados correctamente en SQLite.')),
+          SnackBar(content: Text('Usuarios registrados correctamente en SQLite. '
+              'Nuevos Alumnos: $insertedStudents, Duplicados: $duplicatedStudents. '
+              'Nuevos Usuarios: $insertedUsers, Duplicados: $duplicatedUsers.')),
         );
       } else {
         Navigator.of(context).pop();
@@ -92,4 +157,5 @@ class UserFetcher {
       );
     }
   }
+
 }
