@@ -7,6 +7,7 @@ import 'package:appasistencia/viewmodel/asistencias/asistencias_transfer.dart';
 import 'package:flutter/material.dart';
 import 'package:telephony/telephony.dart';
 import '../model/bduser.dart';
+import '../viewmodel/users/users_list.dart';
 
 class RegistroAsistencias extends StatefulWidget {
   @override
@@ -16,11 +17,14 @@ class RegistroAsistencias extends StatefulWidget {
 class _RegistroAsistenciasState extends State<RegistroAsistencias> {
    List<Map<String, dynamic>> asistencias = [
   ];
+   List<Map<String, dynamic>> sin_asistencias = [
+   ];
    final Telephony telephony = Telephony.instance;
 
   Future<void>ListAsist() async{
 
      asistencias = await DatabaseHelper.getAsistencias();
+     sin_asistencias = await DatabaseHelper.getSinAsistencias();
      setState(() {
        print(asistencias);
      });
@@ -45,9 +49,13 @@ class _RegistroAsistenciasState extends State<RegistroAsistencias> {
      String mensaje = '';
      if(tipo =="nada"){
       mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro';
+     }else if(tipo =="NO ASISTIO"){
+       mensaje = 'El estudiante $nombre_capturado no asistió el día de hoy';
      }else{
        mensaje = 'El estudiante $nombre_capturado ha registrado su asistencia a las $_horaRegistro, lo cual se considera $tipo';
      }
+
+
 
 
      try {
@@ -129,13 +137,16 @@ class _RegistroAsistenciasState extends State<RegistroAsistencias> {
                   }
                 }
               }
+              for(int i =0; i < sin_asistencias.length; i++){
+                await _enviarMensaje(sin_asistencias[i]["id"],'NO ASISTIO', sin_asistencias[i]["celular"], sin_asistencias[i]["name"], "");
+              }
               Navigator.of(context).pop();
             },
           ),
           IconButton(
             icon: Icon(Icons.sync),
-            onPressed: () {
-              // Acción de sincronización
+            onPressed: () async{
+              await UserFetcher().fetchAndStoreUsers(context, "https://colegiojorgebasadre.quipukey.pe/index.php/datosmovil/getSincronizarDatos");
             },
           ),
           IconButton(

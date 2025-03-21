@@ -297,11 +297,18 @@ class DatabaseHelper {
     return db.rawQuery(" select a.id,s.name, a.fecha as fecha, a.hora, s.celular, a.mensaje_enviado from asistencia a inner join students s on (a.idstudent = s.id) where a.fecha = ?   ", [fecha]);
   }
 
+  static Future<List<Map<String, dynamic>>> getSinAsistencias() async {
+    final db = await initDB();
+    final now = DateTime.now();
+    String fecha = DateFormat('yyyy-MM-dd').format(now);
+    return db.rawQuery(" select s.id,s.name, s.celular from  students s  where s.id not in (select idstudent from asistencia where fecha = ?)   ", [fecha]);
+  }
+
   static Future<List<Map<String, dynamic>>> getAsistenciasTransf() async {
     final db = await initDB();
     final now = DateTime.now();
     String fecha = DateFormat('yyyy-MM-dd').format(now);
-    return db.rawQuery("select a.id,s.id as codigoalumno ,s.fingerprint, a.fecha, a.hora, a.tipo, a.fecharegistro, u.id as idusuario from asistencia a inner join students s on (a.idstudent = s.id) inner join users u on (LOWER(u.login) = a.idusuario) where a.transferido = '0' ");
+    return db.rawQuery("select a.id,s.id as codigoalumno ,s.fingerprint, a.fecha, a.hora, a.tipo, a.fecharegistro, u.id as idusuario from asistencia a inner join students s on (a.idstudent = s.id) inner join users u on (u.id = a.idusuario) where a.transferido = '0' ");
   }
 
   static Future<List<Map<String, dynamic>>> getHuellasTransf() async {

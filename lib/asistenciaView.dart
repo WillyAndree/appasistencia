@@ -50,7 +50,14 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if(!isInitialized){
+        _initializeDevice();
+      }
+
+    });
     _startContinuousCapture();
+
     //_initializeDevice();
     //_requestSmsPermission();
   }
@@ -70,19 +77,44 @@ class _AsistenciaPageState extends State<AsistenciaPage> {
   }
 
   void _initializeDevice() async {
+    // Mostrar el loader
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text("Inicializando dispositivo..."),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    // Ejecutar la inicialización
     String initMessage = await BiometricHelper.initDevice();
+
+    // Cerrar el loader
+    Navigator.of(context).pop();
 
     if (initMessage.contains("correctamente")) {
       setState(() {
-        isInitialized = true; // Marcar como inicializado
+        isInitialized = true;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("✅ $initMessage")),
       );
-
     } else {
       setState(() {
-        isInitialized = false; // Marcar como no inicializado
+        isInitialized = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ $initMessage")),
